@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: foodfest
+      POSTGRES_PASSWORD: foodfest
+      POSTGRES_DB: foodfest
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./apps/api/db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodfest -d foodfest"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://foodfest:foodfest@postgres:5432/foodfest
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - api-uploads:/app/uploads
+      - ./backups:/app/backups
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  api-uploads:

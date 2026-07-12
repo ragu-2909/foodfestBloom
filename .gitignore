@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+coverage/
+*.log
+.codex-logs/
+uploads/
+backups/
+.DS_Store
+Thumbs.db

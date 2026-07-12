@@ -1,0 +1,20 @@
+{
+  "name": "foodfest-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Docker-first event registration and live voting platform.",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/api",
+    "dev:api": "npm run dev --workspace apps/api",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/api && npm run build --workspace apps/web",
+    "lint": "npm run lint --workspace apps/api && npm run lint --workspace apps/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

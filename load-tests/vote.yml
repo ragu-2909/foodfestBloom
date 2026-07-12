@@ -1,0 +1,32 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 60
+      arrivalRate: 10
+      rampTo: 60
+      name: "Ramp to event load"
+  defaults:
+    headers:
+      content-type: "application/json"
+scenarios:
+  - name: "Register and vote"
+    flow:
+      - get:
+          url: "/teams"
+          capture:
+            - json: "$[0].id"
+              as: "teamId"
+      - post:
+          url: "/register"
+          json:
+            email: "load-{{ $randomNumber(1, 10000000) }}@company.com"
+            employeeName: "Load Tester"
+            teamName: "Load Team"
+            teamMembers: "A, B, C"
+            foodCategory: "Snacks"
+            contactNumber: "9999999999"
+      - post:
+          url: "/vote"
+          json:
+            email: "voter-{{ $randomNumber(1, 10000000) }}@company.com"
+            teamId: "{{ teamId }}"
