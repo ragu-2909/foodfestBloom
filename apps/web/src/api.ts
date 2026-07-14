@@ -40,7 +40,7 @@ export class ApiError extends Error {
 
 export const api = async <T>(path: string, options: RequestOptions = {}): Promise<T> => {
   const headers = new Headers(options.headers);
-  if (options.body && !headers.has("content-type")) {
+  if (options.body && !headers.has("content-type") && !(options.body instanceof FormData)) {
     headers.set("content-type", "application/json");
   }
   if (options.token) {

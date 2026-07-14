@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import * as XLSX from "xlsx";
 import { audit, asyncHandler } from "../logger.js";
 import { query } from "../db.js";
 import { signAdminToken, requireAdmin } from "../middleware/auth.js";
@@ -36,6 +38,131 @@ adminRouter.post(
 );
 
 adminRouter.use("/admin", requireAdmin);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+adminRouter.post(
+  "/admin/import-excel",
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ message: "No file uploaded." });
+      return;
+    }
+
+    try {
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json<any>(sheet);
+
+      if (!rows || rows.length === 0) {
+        res.status(400).json({ message: "The uploaded file contains no data." });
+        return;
+      }
+
+      // Helper to find column key ignoring case and spaces
+      const findValue = (row: any, candidates: string[]): string | undefined => {
+        const keys = Object.keys(row);
+        for (const candidate of candidates) {
+          const cleanCandidate = candidate.toLowerCase().replace(/[\s_-]/g, "");
+          for (const key of keys) {
+            const cleanKey = key.toLowerCase().replace(/[\s_-]/g, "");
+            if (cleanKey === cleanCandidate) {
+              const val = row[key];
+              return val !== undefined && val !== null ? String(val).trim() : undefined;
+            }
+          }
+        }
+        return undefined;
+      };
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2; // 1-based index plus header row
+
+        const email = findValue(row, ["email", "leademail", "employeeemail"]);
+        const employeeName = findValue(row, ["employeename", "leadname", "lead", "name", "member1"]);
+        const teamName = findValue(row, ["teamname", "team"]);
+        const category = findValue(row, ["category", "foodcategory", "food"]) ?? "General";
+        const contactNumber = findValue(row, ["contactnumber", "contact", "phone", "contactno"]) ?? "N/A";
+        const description = findValue(row, ["description", "teamdescription", "desc"]) ?? "";
+
+        // Check up to 3 members
+        const m1 = findValue(row, ["member1", "teammember1", "employeename", "leadname", "name"]);
+        const m2 = findValue(row, ["member2", "teammember2"]);
+        const m3 = findValue(row, ["member3", "teammember3"]);
+
+        if (!email || !employeeName || !teamName) {
+          errorCount++;
+          errors.push(`Row ${rowNum}: Missing required fields (Email, Name, or Team Name).`);
+          continue;
+        }
+
+        // Build members list (up to 3 people)
+        const memberList = [m1 || employeeName, m2, m3]
+          .map(m => m?.trim())
+          .filter(Boolean)
+          .join(", ");
+
+        try {
+          // 1. Insert/Update Registration
+          await query(
+            `INSERT INTO registrations (email, employee_name, team_name, team_members, food_category, contact_number, description, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+             ON CONFLICT (lower(email)) DO UPDATE SET
+               employee_name = EXCLUDED.employee_name,
+               team_name = EXCLUDED.team_name,
+               team_members = EXCLUDED.team_members,
+               food_category = EXCLUDED.food_category,
+               contact_number = EXCLUDED.contact_number,
+               description = EXCLUDED.description,
+               status = 'active',
+               updated_at = now()`,
+            [email.toLowerCase(), employeeName, teamName, memberList, category, contactNumber, description]
+          );
+
+          // 2. Insert/Update Team
+          await query(
+            `INSERT INTO teams (name, description, members, category, created_by)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (lower(name)) DO UPDATE SET
+               description = EXCLUDED.description,
+               members = EXCLUDED.members,
+               category = EXCLUDED.category,
+               updated_at = now()`,
+            [teamName, description || `Team ${teamName}`, memberList, category, email.toLowerCase()]
+          );
+
+          successCount++;
+        } catch (err: any) {
+          errorCount++;
+          errors.push(`Row ${rowNum}: Database error - ${err.message || err}`);
+        }
+      }
+
+      await rebuildTally();
+      await audit(req, "excel_import_completed", 200, { successCount, errorCount });
+
+      res.json({
+        message: `Import complete. ${successCount} successfully imported, ${errorCount} failed.`,
+        successCount,
+        errorCount,
+        errors
+      });
+    } catch (err: any) {
+      await audit(req, "excel_import_failed", 500, { error: err.message || err });
+      res.status(500).json({ message: `Failed to parse Excel: ${err.message || err}` });
+    }
+  })
+);
 
 adminRouter.get(
   "/admin/dashboard",

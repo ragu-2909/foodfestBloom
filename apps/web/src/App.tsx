@@ -9,6 +9,7 @@ import {
   Save,
   Square,
   Trash2,
+  Upload,
   UserCheck,
   Vote
 } from "lucide-react";
@@ -79,14 +80,15 @@ const formatRemaining = (remainingMs: number) => {
 const NoticeView = ({ notice }: { notice: Notice | null }) =>
   notice ? <p className={`notice ${notice.tone}`}>{notice.text}</p> : null;
 
-const Shell = ({ children }: { children: React.ReactNode }) => (
+const Shell = ({ children, showNav = true }: { children: React.ReactNode; showNav?: boolean }) => (
   <main className="shell">
-    <nav className="topbar">
-      <a href="/register">Register</a>
-      <a href="/vote">Vote</a>
-      <a href="/display">Display</a>
-      <a href="/admin">Admin</a>
-    </nav>
+    {showNav && (
+      <nav className="topbar">
+        <a href="/vote">Vote</a>
+        <a href="/display">Display</a>
+        <a href="/admin">Admin</a>
+      </nav>
+    )}
     {children}
   </main>
 );
@@ -210,7 +212,7 @@ function VotePage() {
   };
 
   return (
-    <Shell>
+    <Shell showNav={false}>
       <Hero title="Cast Your Vote" kicker={formatRemaining(results.voting.remainingMs)} />
       <form className="panel vote-flow" onSubmit={submit}>
         <label>
@@ -312,6 +314,10 @@ function AdminPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [registrations, setRegistrations] = useState<Record<string, string>[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+  const [teamFormNotice, setTeamFormNotice] = useState<Notice | null>(null);
+  const [excelNotice, setExcelNotice] = useState<Notice | null>(null);
+  const [excelBusy, setExcelBusy] = useState(false);
 
   const load = async (activeToken = token) => {
     if (!activeToken) return;
@@ -380,17 +386,106 @@ function AdminPage() {
     setNotice({ tone: "success", text: "Settings saved." });
   };
 
-  const addTeam = async (event: FormEvent<HTMLFormElement>) => {
+  const submitTeam = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token) return;
-    await api("/admin/addTeam", {
-      method: "POST",
-      token,
-      body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget)))
-    });
-    event.currentTarget.reset();
-    await load();
-    setNotice({ tone: "success", text: "Team added." });
+    setTeamFormNotice(null);
+
+    const formData = new FormData(event.currentTarget);
+    const name = formData.get("name") as string;
+    const category = formData.get("category") as string;
+    const imageUrl = formData.get("imageUrl") as string;
+    const description = formData.get("description") as string;
+
+    const m1 = formData.get("member1") as string;
+    const m2 = formData.get("member2") as string;
+    const m3 = formData.get("member3") as string;
+
+    const members = [m1, m2, m3].map(m => m?.trim()).filter(Boolean).join(", ");
+
+    const payload = {
+      name,
+      category,
+      imageUrl,
+      description,
+      members
+    };
+
+    try {
+      if (editingTeam) {
+        await api(`/admin/editTeam/${editingTeam.id}`, {
+          method: "PUT",
+          token,
+          body: JSON.stringify(payload)
+        });
+        setTeamFormNotice({ tone: "success", text: "Team updated successfully." });
+      } else {
+        await api("/admin/addTeam", {
+          method: "POST",
+          token,
+          body: JSON.stringify(payload)
+        });
+        setTeamFormNotice({ tone: "success", text: "Team added successfully." });
+      }
+      setEditingTeam(null);
+      event.currentTarget.reset();
+      await load();
+    } catch (error) {
+      setTeamFormNotice({
+        tone: "error",
+        text: error instanceof ApiError ? error.message : "Failed to save team."
+      });
+    }
+  };
+
+  const deleteTeam = async (id: string) => {
+    if (!token) return;
+    if (!window.confirm("Are you sure you want to delete this team? All associated votes will be deleted.")) return;
+
+    try {
+      await api(`/admin/deleteTeam/${id}`, {
+        method: "DELETE",
+        token
+      });
+      await load();
+      setNotice({ tone: "success", text: "Team deleted successfully." });
+    } catch (error) {
+      setNotice({
+        tone: "error",
+        text: error instanceof ApiError ? error.message : "Failed to delete team."
+      });
+    }
+  };
+
+  const uploadExcel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!token) return;
+    const form = event.currentTarget;
+    const fileInput = form.elements.namedItem("file") as HTMLInputElement;
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+      setExcelNotice({ tone: "error", text: "Please select a file first." });
+      return;
+    }
+
+    setExcelBusy(true);
+    setExcelNotice(null);
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    try {
+      const data = await api<{ message: string }>("/admin/import-excel", {
+        method: "POST",
+        token,
+        body: formData
+      });
+      setExcelNotice({ tone: "success", text: data.message });
+      form.reset();
+      await load();
+    } catch (error: any) {
+      setExcelNotice({ tone: "error", text: error.message || "Upload failed." });
+    } finally {
+      setExcelBusy(false);
+    }
   };
 
   if (!token) {
@@ -462,14 +557,68 @@ function AdminPage() {
         <button className="primary wide"><Save size={18} /> Save Settings</button>
       </form>
 
-      <form className="panel form-grid" onSubmit={addTeam}>
-        <h2 className="wide">Team Management</h2>
-        <input name="name" placeholder="Team name" required />
-        <input name="category" placeholder="Category" required />
-        <input name="imageUrl" placeholder="Image URL" />
-        <input name="members" placeholder="Team members" />
-        <textarea className="wide" name="description" placeholder="Description" rows={2} />
-        <button className="primary wide"><Plus size={18} /> Add Team</button>
+      <form key={editingTeam ? editingTeam.id : "new"} className="panel form-grid" onSubmit={submitTeam}>
+        <h2 id="team-form-heading" className="wide">
+          {editingTeam ? `Edit Team: ${editingTeam.name}` : "Add New Team"}
+        </h2>
+        <label>
+          Team Name
+          <input name="name" defaultValue={editingTeam?.name || ""} required />
+        </label>
+        <label>
+          Category
+          <input name="category" defaultValue={editingTeam?.category || ""} required />
+        </label>
+        <label>
+          Image URL
+          <input name="imageUrl" defaultValue={editingTeam?.imageUrl || ""} />
+        </label>
+        <div className="wide grid-3-cols">
+          <label>
+            Team Lead (Member 1)
+            <input name="member1" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[0]?.trim() : ""} required />
+          </label>
+          <label>
+            Member 2
+            <input name="member2" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[1]?.trim() : ""} />
+          </label>
+          <label>
+            Member 3
+            <input name="member3" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[2]?.trim() : ""} />
+          </label>
+        </div>
+        <label className="wide">
+          Description
+          <textarea name="description" defaultValue={editingTeam?.description || ""} rows={2} />
+        </label>
+        <div className="wide form-buttons">
+          <button className="primary wide" type="submit">
+            {editingTeam ? "Update Team" : "Add Team"}
+          </button>
+          {editingTeam && (
+            <button className="secondary wide" type="button" onClick={() => setEditingTeam(null)}>
+              Cancel Edit
+            </button>
+          )}
+        </div>
+        <NoticeView notice={teamFormNotice} />
+      </form>
+
+      <form className="panel form-grid" onSubmit={uploadExcel}>
+        <h2 className="wide">Import Teams & Registrations from Excel</h2>
+        <p className="wide excel-info-text">
+          Upload an Excel (.xlsx, .xls) or CSV (.csv) file to import.
+          Supported column headers: <strong>Team Name, Category, Lead Email, Lead Name, Contact Number, Member 1, Member 2, Member 3, Description</strong>.
+        </p>
+        <label className="wide file-upload-label">
+          Select Excel/CSV File
+          <input name="file" type="file" accept=".xlsx,.xls,.csv" required disabled={excelBusy} />
+        </label>
+        <button className="primary wide" disabled={excelBusy}>
+          <Upload size={18} />
+          {excelBusy ? "Importing..." : "Upload & Import"}
+        </button>
+        <NoticeView notice={excelNotice} />
       </form>
 
       <section className="panel table-panel">
@@ -485,13 +634,33 @@ function AdminPage() {
       </section>
 
       <section className="panel table-panel">
-        <h2>Teams</h2>
-        {teams.map((team) => (
-          <div className="list-row" key={team.id}>
-            <strong>{team.name}</strong>
-            <span>{team.category}</span>
-          </div>
-        ))}
+        <h2>Teams ({teams.length})</h2>
+        <div className="team-list">
+          {teams.map((team) => {
+            const membersList = team.members ? team.members.split(",").map(m => m.trim()).filter(Boolean) : [];
+            return (
+              <div className="list-row team-crud-row" key={team.id}>
+                <div className="team-info">
+                  <strong>{team.name}</strong>
+                  <span className="category-badge">{team.category}</span>
+                  {membersList.length > 0 && (
+                    <div className="team-members-list">
+                      Members: {membersList.join(", ")}
+                    </div>
+                  )}
+                  {team.description && <small className="team-desc">{team.description}</small>}
+                </div>
+                <div className="row-actions">
+                  <button className="edit-btn" onClick={() => {
+                    setEditingTeam(team);
+                    document.getElementById("team-form-heading")?.scrollIntoView({ behavior: "smooth" });
+                  }}>Edit</button>
+                  <button className="delete-btn danger" onClick={() => deleteTeam(team.id)}>Delete</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <section className="panel table-panel">
@@ -508,10 +677,8 @@ function AdminPage() {
 }
 
 export default function App() {
-  const page = window.location.pathname.split("/")[1] || "register";
-
-  if (page === "vote") return <VotePage />;
+  const page = window.location.pathname.split("/")[1] || "vote";
   if (page === "display") return <ResultsBoard fullscreen />;
   if (page === "admin") return <AdminPage />;
-  return <RegisterPage />;
+  return <VotePage />;
 }
