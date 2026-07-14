@@ -318,6 +318,8 @@ function AdminPage() {
   const [teamFormNotice, setTeamFormNotice] = useState<Notice | null>(null);
   const [excelNotice, setExcelNotice] = useState<Notice | null>(null);
   const [excelBusy, setExcelBusy] = useState(false);
+  const [runningCommand, setRunningCommand] = useState<string | null>(null);
+  const { results } = useResults();
 
   const load = async (activeToken = token) => {
     if (!activeToken) return;
@@ -356,6 +358,7 @@ function AdminPage() {
 
   const command = async (path: string, body?: unknown) => {
     if (!token) return;
+    setRunningCommand(path);
     try {
       await api(path, {
         method: "POST",
@@ -363,9 +366,12 @@ function AdminPage() {
         body: body ? JSON.stringify(body) : undefined
       });
       await load();
-      setNotice({ tone: "success", text: "Saved." });
+      setNotice({ tone: "success", text: "Operation completed successfully." });
+      setTimeout(() => setNotice(null), 3000);
     } catch (error) {
       setNotice({ tone: "error", text: error instanceof ApiError ? error.message : "Action failed." });
+    } finally {
+      setRunningCommand(null);
     }
   };
 
@@ -513,7 +519,40 @@ function AdminPage() {
 
   return (
     <Shell>
-      <Hero title="Admin Dashboard" kicker="Live Operations" />
+      <Hero title="Admin Panel" kicker={dashboard?.settings.event_name ? String(dashboard.settings.event_name) : "Food Fest Live"} />
+
+      {/* Real-time Status Indicators */}
+      <section className="status-grid">
+        <div className="status-card">
+          <div className="status-header">
+            <h3>Registration Portal</h3>
+            <span className={`status-badge ${dashboard?.settings.registration_open ? "active" : "closed"}`}>
+              {dashboard?.settings.registration_open ? "Open" : "Closed"}
+            </span>
+          </div>
+          <p className="status-detail">
+            {dashboard?.settings.registration_open 
+              ? "Participants are able to register (Public registration is hidden, but active)." 
+              : "Registration is locked. Standard user signups are disabled."}
+          </p>
+        </div>
+
+        <div className="status-card">
+          <div className="status-header">
+            <h3>Voting Session</h3>
+            <span className={`status-badge ${results.voting.votingOpen && results.voting.hasStarted && !results.voting.hasEnded ? "active" : "closed"}`}>
+              {results.voting.votingOpen && results.voting.hasStarted && !results.voting.hasEnded ? "Live" : "Inactive"}
+            </span>
+          </div>
+          <p className="status-detail">
+            {results.voting.votingOpen && results.voting.hasStarted && !results.voting.hasEnded
+              ? `Live voting is currently underway. Time remaining: ${formatRemaining(results.voting.remainingMs)}`
+              : "Voting is closed. Voters cannot submit selections."}
+          </p>
+        </div>
+      </section>
+
+      {/* KPI Metrics */}
       <section className="dashboard">
         <div className="metric">
           <Activity />
@@ -532,146 +571,236 @@ function AdminPage() {
         </div>
       </section>
 
-      <section className="panel admin-grid">
-        <button onClick={() => command("/admin/startRegistration")}><Play size={16} /> Start Registration</button>
-        <button onClick={() => command("/admin/stopRegistration")}><Square size={16} /> Stop Registration</button>
-        <button onClick={() => command("/admin/startVoting", { durationMinutes: 10 })}><Play size={16} /> Start Voting</button>
-        <button onClick={() => command("/admin/stopVoting")}><Square size={16} /> Stop Voting</button>
-        <button onClick={() => load()}><RefreshCcw size={16} /> Refresh</button>
-        <button className="danger" onClick={() => command("/admin/resetEvent")}><Trash2 size={16} /> Reset Event</button>
-      </section>
+      {/* Main Grid Layout */}
+      <div className="dashboard-layout">
+        
+        {/* Column 1: Controls & Settings */}
+        <div className="dashboard-column">
+          <section className="panel">
+            <h2>Operations Control</h2>
+            <div className="admin-grid">
+              <button 
+                onClick={() => command("/admin/startRegistration")} 
+                disabled={runningCommand !== null}
+                className="control-btn"
+              >
+                {runningCommand === "/admin/startRegistration" ? "Opening..." : <><Play size={15} /> Start Registration</>}
+              </button>
+              <button 
+                onClick={() => command("/admin/stopRegistration")} 
+                disabled={runningCommand !== null}
+                className="control-btn"
+              >
+                {runningCommand === "/admin/stopRegistration" ? "Closing..." : <><Square size={15} /> Stop Registration</>}
+              </button>
+              <button 
+                onClick={() => command("/admin/startVoting", { durationMinutes: 10 })} 
+                disabled={runningCommand !== null}
+                className="control-btn"
+              >
+                {runningCommand === "/admin/startVoting" ? "Starting..." : <><Play size={15} /> Start Voting</>}
+              </button>
+              <button 
+                onClick={() => command("/admin/stopVoting")} 
+                disabled={runningCommand !== null}
+                className="control-btn"
+              >
+                {runningCommand === "/admin/stopVoting" ? "Stopping..." : <><Square size={15} /> Stop Voting</>}
+              </button>
+              <button 
+                onClick={() => load()} 
+                disabled={runningCommand !== null}
+                className="control-btn"
+              >
+                <RefreshCcw size={15} /> Refresh Data
+              </button>
+              <button 
+                className="danger control-btn" 
+                onClick={() => command("/admin/resetEvent")} 
+                disabled={runningCommand !== null}
+              >
+                {runningCommand === "/admin/resetEvent" ? "Resetting..." : <><Trash2 size={15} /> Reset Event</>}
+              </button>
+            </div>
+          </section>
 
-      <form className="panel form-grid" onSubmit={saveSettings}>
-        <label className="wide">
-          Event Name
-          <input name="eventName" defaultValue={String(dashboard?.settings.event_name ?? "Food Fest Live")} />
-        </label>
-        <label className="toggle">
-          <input name="registrationOpen" type="checkbox" defaultChecked={dashboard?.settings.registration_open === true} />
-          Registration Open
-        </label>
-        <label className="toggle">
-          <input name="showLiveResults" type="checkbox" defaultChecked={dashboard?.settings.show_live_results !== false} />
-          Show Live Results
-        </label>
-        <button className="primary wide"><Save size={18} /> Save Settings</button>
-      </form>
+          <form className="panel form-grid" onSubmit={saveSettings}>
+            <h2>Event Configuration</h2>
+            <label className="wide">
+              Event Display Name
+              <input name="eventName" defaultValue={String(dashboard?.settings.event_name ?? "Food Fest Live")} />
+            </label>
+            <label className="toggle">
+              <input name="registrationOpen" type="checkbox" defaultChecked={dashboard?.settings.registration_open === true} />
+              Registration Open
+            </label>
+            <label className="toggle">
+              <input name="showLiveResults" type="checkbox" defaultChecked={dashboard?.settings.show_live_results !== false} />
+              Show Live Results
+            </label>
+            <button className="primary wide"><Save size={18} /> Save Settings</button>
+          </form>
 
-      <form key={editingTeam ? editingTeam.id : "new"} className="panel form-grid" onSubmit={submitTeam}>
-        <h2 id="team-form-heading" className="wide">
-          {editingTeam ? `Edit Team: ${editingTeam.name}` : "Add New Team"}
-        </h2>
-        <label>
-          Team Name
-          <input name="name" defaultValue={editingTeam?.name || ""} required />
-        </label>
-        <label>
-          Category
-          <input name="category" defaultValue={editingTeam?.category || ""} required />
-        </label>
-        <label>
-          Image URL
-          <input name="imageUrl" defaultValue={editingTeam?.imageUrl || ""} />
-        </label>
-        <div className="wide grid-3-cols">
-          <label>
-            Team Lead (Member 1)
-            <input name="member1" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[0]?.trim() : ""} required />
-          </label>
-          <label>
-            Member 2
-            <input name="member2" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[1]?.trim() : ""} />
-          </label>
-          <label>
-            Member 3
-            <input name="member3" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[2]?.trim() : ""} />
-          </label>
-        </div>
-        <label className="wide">
-          Description
-          <textarea name="description" defaultValue={editingTeam?.description || ""} rows={2} />
-        </label>
-        <div className="wide form-buttons">
-          <button className="primary wide" type="submit">
-            {editingTeam ? "Update Team" : "Add Team"}
-          </button>
-          {editingTeam && (
-            <button className="secondary wide" type="button" onClick={() => setEditingTeam(null)}>
-              Cancel Edit
+          <form className="panel form-grid" onSubmit={uploadExcel}>
+            <h2>Bulk Excel Import</h2>
+            <p className="excel-info-text">
+              Upload an Excel (.xlsx, .xls) or CSV file. First sheet is parsed.
+              Supported columns: <strong>Team Name, Category, Lead Email, Lead Name, Contact Number, Member 1, Member 2, Member 3, Description</strong>.
+            </p>
+            <label className="wide file-upload-label">
+              Select Excel/CSV File
+              <input name="file" type="file" accept=".xlsx,.xls,.csv" required disabled={excelBusy} />
+            </label>
+            <button className="primary wide" disabled={excelBusy}>
+              <Upload size={18} />
+              {excelBusy ? "Importing..." : "Upload & Import"}
             </button>
-          )}
+            <NoticeView notice={excelNotice} />
+          </form>
         </div>
-        <NoticeView notice={teamFormNotice} />
-      </form>
 
-      <form className="panel form-grid" onSubmit={uploadExcel}>
-        <h2 className="wide">Import Teams & Registrations from Excel</h2>
-        <p className="wide excel-info-text">
-          Upload an Excel (.xlsx, .xls) or CSV (.csv) file to import.
-          Supported column headers: <strong>Team Name, Category, Lead Email, Lead Name, Contact Number, Member 1, Member 2, Member 3, Description</strong>.
-        </p>
-        <label className="wide file-upload-label">
-          Select Excel/CSV File
-          <input name="file" type="file" accept=".xlsx,.xls,.csv" required disabled={excelBusy} />
-        </label>
-        <button className="primary wide" disabled={excelBusy}>
-          <Upload size={18} />
-          {excelBusy ? "Importing..." : "Upload & Import"}
-        </button>
-        <NoticeView notice={excelNotice} />
-      </form>
+        {/* Column 2: Team Management */}
+        <div className="dashboard-column">
+          <form key={editingTeam ? editingTeam.id : "new"} className="panel form-grid" onSubmit={submitTeam}>
+            <h2 id="team-form-heading">
+              {editingTeam ? `Edit Team: ${editingTeam.name}` : "Add New Team"}
+            </h2>
+            <label>
+              Team Name
+              <input name="name" defaultValue={editingTeam?.name || ""} required />
+            </label>
+            <label>
+              Category
+              <input name="category" defaultValue={editingTeam?.category || ""} required />
+            </label>
+            <label className="wide">
+              Image URL
+              <input name="imageUrl" defaultValue={editingTeam?.imageUrl || ""} />
+            </label>
+            <div className="wide grid-3-cols">
+              <label>
+                Team Lead (Member 1)
+                <input name="member1" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[0]?.trim() : ""} required />
+              </label>
+              <label>
+                Member 2
+                <input name="member2" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[1]?.trim() : ""} />
+              </label>
+              <label>
+                Member 3
+                <input name="member3" defaultValue={editingTeam?.members ? editingTeam.members.split(",")[2]?.trim() : ""} />
+              </label>
+            </div>
+            <label className="wide">
+              Description
+              <textarea name="description" defaultValue={editingTeam?.description || ""} rows={2} />
+            </label>
+            <div className="wide form-buttons">
+              <button className="primary wide" type="submit">
+                {editingTeam ? "Update Team" : "Add Team"}
+              </button>
+              {editingTeam && (
+                <button className="secondary wide" type="button" onClick={() => setEditingTeam(null)}>
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+            <NoticeView notice={teamFormNotice} />
+          </form>
 
-      <section className="panel table-panel">
-        <div className="section-head">
-          <h2>Reports</h2>
-          <div>
-            <button onClick={() => downloadReport("/export/csv", token, "foodfest-report.csv")}><Download size={16} /> CSV</button>
-            <button onClick={() => downloadReport("/export/excel", token, "foodfest-report.xls")}><Download size={16} /> Excel</button>
-            <button onClick={() => downloadReport("/export/pdf", token, "foodfest-report.pdf")}><Download size={16} /> PDF</button>
-          </div>
-        </div>
-        <NoticeView notice={notice} />
-      </section>
-
-      <section className="panel table-panel">
-        <h2>Teams ({teams.length})</h2>
-        <div className="team-list">
-          {teams.map((team) => {
-            const membersList = team.members ? team.members.split(",").map(m => m.trim()).filter(Boolean) : [];
-            return (
-              <div className="list-row team-crud-row" key={team.id}>
-                <div className="team-info">
-                  <strong>{team.name}</strong>
-                  <span className="category-badge">{team.category}</span>
-                  {membersList.length > 0 && (
-                    <div className="team-members-list">
-                      Members: {membersList.join(", ")}
+          <section className="panel table-panel">
+            <h2>Active Teams ({teams.length})</h2>
+            <div className="team-list">
+              {teams.length === 0 ? (
+                <p className="no-data">No teams created yet.</p>
+              ) : (
+                teams.map((team) => {
+                  const membersList = team.members ? team.members.split(",").map(m => m.trim()).filter(Boolean) : [];
+                  return (
+                    <div className="list-row team-crud-row" key={team.id}>
+                      <div className="team-info">
+                        <strong>{team.name}</strong>
+                        <span className="category-badge">{team.category}</span>
+                        {membersList.length > 0 && (
+                          <div className="team-members-list">
+                            Members: {membersList.join(", ")}
+                          </div>
+                        )}
+                        {team.description && <small className="team-desc">{team.description}</small>}
+                      </div>
+                      <div className="row-actions">
+                        <button className="edit-btn" onClick={() => {
+                          setEditingTeam(team);
+                          document.getElementById("team-form-heading")?.scrollIntoView({ behavior: "smooth" });
+                        }}>Edit</button>
+                        <button className="delete-btn danger" onClick={() => deleteTeam(team.id)}>Delete</button>
+                      </div>
                     </div>
-                  )}
-                  {team.description && <small className="team-desc">{team.description}</small>}
-                </div>
-                <div className="row-actions">
-                  <button className="edit-btn" onClick={() => {
-                    setEditingTeam(team);
-                    document.getElementById("team-form-heading")?.scrollIntoView({ behavior: "smooth" });
-                  }}>Edit</button>
-                  <button className="delete-btn danger" onClick={() => deleteTeam(team.id)}>Delete</button>
-                </div>
-              </div>
-            );
-          })}
+                  );
+                })
+              )}
+            </div>
+          </section>
         </div>
-      </section>
 
-      <section className="panel table-panel">
-        <h2>Registrations</h2>
-        {registrations.slice(0, 12).map((registration) => (
-          <div className="list-row" key={registration.id}>
-            <strong>{registration.employeeName}</strong>
-            <span>{registration.email}</span>
-          </div>
-        ))}
-      </section>
+        {/* Column 3: Reports, Registrations & Live Logs */}
+        <div className="dashboard-column">
+          <section className="panel table-panel">
+            <div className="section-head">
+              <h2>Export Reports</h2>
+              <div className="reports-buttons">
+                <button onClick={() => downloadReport("/export/csv", token, "foodfest-report.csv")}><Download size={14} /> CSV</button>
+                <button onClick={() => downloadReport("/export/excel", token, "foodfest-report.xls")}><Download size={14} /> Excel</button>
+                <button onClick={() => downloadReport("/export/pdf", token, "foodfest-report.pdf")}><Download size={14} /> PDF</button>
+              </div>
+            </div>
+            <NoticeView notice={notice} />
+          </section>
+
+          <section className="panel table-panel">
+            <h2>Live Audit Logs</h2>
+            <div className="activity-list">
+              {dashboard?.recentActivity && dashboard.recentActivity.length > 0 ? (
+                dashboard.recentActivity.slice(0, 10).map((act, index) => (
+                  <div className="activity-row" key={index}>
+                    <div className="activity-meta">
+                      <span className="activity-action">{act.action.toUpperCase().replace(/_/g, " ")}</span>
+                      <span className="activity-time">
+                        {new Date(act.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="activity-details">
+                      <span className="activity-email">{act.email || "System"}</span>
+                      <span className={`activity-status-badge ${act.status >= 400 ? "failed" : "success"}`}>
+                        {act.status}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="no-activity">No system activity logged yet.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="panel table-panel">
+            <h2>Excel Registrations ({registrations.length})</h2>
+            <div className="registration-list">
+              {registrations.length === 0 ? (
+                <p className="no-data">No excel registrations imported.</p>
+              ) : (
+                registrations.slice(0, 10).map((reg) => (
+                  <div className="list-row registration-row" key={reg.id}>
+                    <strong>{reg.employeeName}</strong>
+                    <span>{reg.email}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+
+      </div>
     </Shell>
   );
 }

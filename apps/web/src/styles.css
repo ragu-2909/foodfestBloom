@@ -888,3 +888,198 @@ textarea {
     justify-content: flex-end;
   }
 }
+
+/* Real-time Status Card Section */
+.status-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto 24px;
+}
+
+.status-card {
+  padding: 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.status-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-badge.active {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
+  animation: status-pulse 2s infinite alternate;
+}
+
+.status-badge.closed {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+.status-detail {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+@keyframes status-pulse {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+/* Admin Layout - Grid System */
+.dashboard-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.dashboard-column {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Live Audit Logs / Activity feed */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 380px;
+  overflow-y: auto;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--panel-border);
+  transition: all var(--transition-fast);
+}
+
+.activity-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.activity-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.activity-action {
+  font-size: 0.78rem;
+  font-weight: 850;
+  color: var(--indigo);
+  letter-spacing: 0.05em;
+}
+
+.activity-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.activity-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.activity-email {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.activity-status-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.activity-status-badge.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+}
+
+.activity-status-badge.failed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+.no-activity, .no-data {
+  margin: 0;
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Control buttons style adjustments */
+.control-btn {
+  width: 100%;
+  font-size: 0.88rem !important;
+}
+
+/* Layout Media Queries adjustment for PC */
+@media (min-width: 1024px) {
+  .dashboard-layout {
+    grid-template-columns: 1.10fr 1fr 1.05fr;
+    max-width: 1280px;
+  }
+  
+  .status-grid {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 1280px;
+  }
+  
+  .topbar, .hero, .panel, .dashboard {
+    max-width: 1280px;
+  }
+}
+
