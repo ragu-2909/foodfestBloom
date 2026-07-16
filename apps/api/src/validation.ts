@@ -38,5 +38,6 @@ export const votingStartSchema = z.object({
 export const settingsSchema = z.object({
   registrationOpen: z.boolean().optional(),
   showLiveResults: z.boolean().optional(),
-  eventName: z.string().trim().min(1).max(120).optional()
+  eventName: z.string().trim().min(1).max(120).optional(),
+  colorSelectionOpen: z.boolean().optional()
 });

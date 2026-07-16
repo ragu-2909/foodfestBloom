@@ -251,6 +251,24 @@ adminRouter.post(
 );
 
 adminRouter.post(
+  "/admin/startColorSelection",
+  asyncHandler(async (req, res) => {
+    await setSetting("color_selection_open", true);
+    await audit(req, "color_selection_started", 200);
+    res.json({ message: "Color selection opened." });
+  })
+);
+
+adminRouter.post(
+  "/admin/stopColorSelection",
+  asyncHandler(async (req, res) => {
+    await setSetting("color_selection_open", false);
+    await audit(req, "color_selection_stopped", 200);
+    res.json({ message: "Color selection closed." });
+  })
+);
+
+adminRouter.post(
   "/admin/startVoting",
   asyncHandler(async (req, res) => {
     const parsed = votingStartSchema.safeParse(req.body ?? {});
@@ -290,7 +308,9 @@ adminRouter.get(
   "/admin/teams",
   asyncHandler(async (_req, res) => {
     const rows = await query(
-      `SELECT id, name, description, image_url AS "imageUrl", members, category, created_at AS "createdAt"
+      `SELECT id, name, description, image_url AS "imageUrl", members, category, created_at AS "createdAt",
+              invitation_token AS "invitationToken", selected_color_id AS "selectedColorId",
+              selection_completed AS "selectionCompleted"
        FROM teams
        ORDER BY name ASC`
     );
@@ -382,6 +402,9 @@ adminRouter.put(
     if (parsed.data.eventName !== undefined) {
       await setSetting("event_name", parsed.data.eventName);
     }
+    if (parsed.data.colorSelectionOpen !== undefined) {
+      await setSetting("color_selection_open", parsed.data.colorSelectionOpen);
+    }
 
     await rebuildTally();
     await audit(req, "settings_updated", 200, parsed.data);
@@ -393,14 +416,48 @@ adminRouter.post(
   "/admin/resetEvent",
   asyncHandler(async (req, res) => {
     await query("TRUNCATE votes, registrations, audit_logs RESTART IDENTITY");
+    await query(`
+      UPDATE colors SET status = 'available', reserved_by_team_id = null, booked_by_team_id = null, reservation_expires_at = null, updated_at = now();
+      UPDATE teams SET selected_color_id = null, selection_completed = false, selection_completed_at = null;
+    `);
     await Promise.all([
       setSetting("registration_open", true),
       setSetting("voting_open", false),
       setSetting("voting_start_time", null),
-      setSetting("voting_end_time", null)
+      setSetting("voting_end_time", null),
+      setSetting("color_selection_open", false)
     ]);
     await rebuildTally();
     await audit(req, "event_reset", 200);
     res.json({ message: "Event reset complete." });
+  })
+);
+
+adminRouter.post(
+  "/admin/colors",
+  asyncHandler(async (req, res) => {
+    const name = String(req.body.name || "").trim();
+    const hexCode = String(req.body.hexCode || "").trim();
+    if (!name || !hexCode) {
+      res.status(400).json({ message: "Color name and Hex Code are required." });
+      return;
+    }
+    if (!/^#[0-9A-F]{6}$/i.test(hexCode)) {
+      res.status(400).json({ message: "Invalid hex code. Must be in #RRGGBB format." });
+      return;
+    }
+
+    try {
+      await query(
+        `INSERT INTO colors(name, hex_code)
+         VALUES ($1, $2)
+         ON CONFLICT (name) DO UPDATE SET hex_code = EXCLUDED.hex_code, updated_at = now()`,
+        [name, hexCode]
+      );
+      await audit(req, "color_added", 201, { name, hexCode });
+      res.status(201).json({ message: `Color "${name}" added successfully.` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to add color." });
+    }
   })
 );

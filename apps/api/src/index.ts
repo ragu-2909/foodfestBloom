@@ -2,6 +2,7 @@ import { createApp } from "./app.js";
 import { config } from "./config.js";
 import { closePool, runMigrations } from "./db.js";
 import { rebuildTally, startBroadcastLoop } from "./services/tally.js";
+import { startExpirationScheduler } from "./services/colors.js";
 
 const app = createApp();
 
@@ -17,6 +18,7 @@ await rebuildTally().catch((error) => {
 });
 
 startBroadcastLoop();
+startExpirationScheduler();
 
 const server = app.listen(config.port, () => {
   console.log(`FoodFest API listening on port ${config.port}`);
