@@ -14,7 +14,7 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 3000),
   appVersion: process.env.APP_VERSION ?? "0.1.0",
-  frontendOrigin: process.env.FRONTEND_ORIGIN ?? "http://localhost:5173",
+  frontendOrigin: process.env.FRONTEND_ORIGIN ?? "https://foodfest-bloom-web-qfuh.vercel.app",
   corsOrigins: process.env.CORS_ORIGINS,
   databaseUrl: required("DATABASE_URL", "postgres://foodfest:foodfest@localhost:5432/foodfest"),
   poolMax: Number(process.env.PG_POOL_MAX ?? 12),
