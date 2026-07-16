@@ -21,5 +21,5 @@ export const config = {
   adminEmail: required("ADMIN_EMAIL", "admin@company.com"),
   adminPassword: required("ADMIN_PASSWORD", "change-this-password"),
   jwtSecret: required("JWT_SECRET", "change-this-long-random-secret"),
-  publicApiUrl: process.env.PUBLIC_API_URL ?? `http://localhost:${process.env.PORT ?? 3000}`
+  publicApiUrl: process.env.PUBLIC_API_URL ?? `https://foodfest-bloom-web-qfuh.vercel.app:${process.env.PORT ?? 3000}`
 };
