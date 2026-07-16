@@ -31,10 +31,16 @@ export const getVotingWindow = async () => {
     getSetting<string | null>("voting_end_time", null)
   ]);
 
+  const parseDate = (val: any) => {
+    if (!val || val === "null") return null;
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
   return {
     votingOpen,
-    startTime: startTime ? new Date(startTime) : null,
-    endTime: endTime ? new Date(endTime) : null
+    startTime: parseDate(startTime),
+    endTime: parseDate(endTime)
   };
 };
 

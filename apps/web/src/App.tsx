@@ -262,8 +262,9 @@ function ResultsBoard({ fullscreen = false }: { fullscreen?: boolean }) {
     <section className={fullscreen ? "display-board" : "panel"}>
       <div className="board-head">
         <div>
-          <p>{connected ? "Live" : "Polling"}</p>
-          <h1>FOOD FEST LIVE</h1>
+          <p>{connected ? "Taste of Bloom" : "Taste of Bloom"}</p>
+          <h1 style={{ lineHeight: '1.1', marginBottom: '4px' }}>TASTE OF BLOOM</h1>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block' }}>Part of Bloom Energy</span>
         </div>
         <div className="timer">{formatRemaining(results.voting.remainingMs)}</div>
       </div>
@@ -844,62 +845,7 @@ function AdminPage() {
           </section>
         </div>
 
-        {/* Column 3: Reports, Registrations & Live Logs */}
-        <div className="dashboard-column">
-          <section className="panel table-panel">
-            <div className="section-head">
-              <h2>Export Reports</h2>
-              <div className="reports-buttons">
-                <button onClick={() => downloadReport("/export/csv", token, "foodfest-report.csv")}><Download size={14} /> CSV</button>
-                <button onClick={() => downloadReport("/export/excel", token, "foodfest-report.xls")}><Download size={14} /> Excel</button>
-                <button onClick={() => downloadReport("/export/pdf", token, "foodfest-report.pdf")}><Download size={14} /> PDF</button>
-              </div>
-            </div>
-            <NoticeView notice={notice} />
-          </section>
 
-          <section className="panel table-panel">
-            <h2>Live Audit Logs</h2>
-            <div className="activity-list">
-              {dashboard?.recentActivity && dashboard.recentActivity.length > 0 ? (
-                dashboard.recentActivity.slice(0, 10).map((act, index) => (
-                  <div className="activity-row" key={index}>
-                    <div className="activity-meta">
-                      <span className="activity-action">{act.action.toUpperCase().replace(/_/g, " ")}</span>
-                      <span className="activity-time">
-                        {new Date(act.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </span>
-                    </div>
-                    <div className="activity-details">
-                      <span className="activity-email">{act.email || "System"}</span>
-                      <span className={`activity-status-badge ${act.status >= 400 ? "failed" : "success"}`}>
-                        {act.status}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="no-activity">No system activity logged yet.</p>
-              )}
-            </div>
-          </section>
-
-          <section className="panel table-panel">
-            <h2>Excel Registrations ({registrations.length})</h2>
-            <div className="registration-list">
-              {registrations.length === 0 ? (
-                <p className="no-data">No excel registrations imported.</p>
-              ) : (
-                registrations.slice(0, 10).map((reg) => (
-                  <div className="list-row registration-row" key={reg.id}>
-                    <strong>{reg.employeeName}</strong>
-                    <span>{reg.email}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
 
       </div>
 

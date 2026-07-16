@@ -132,6 +132,13 @@ export const runMigrations = async () => {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // Update event_name to Taste of Bloom if it is still Food Fest Live
+    await query(`
+      UPDATE settings 
+      SET value = '"Taste of Bloom"'
+      WHERE key = 'event_name' AND (value = '"Food Fest Live"' OR value = '""');
+    `);
+
   } catch (error) {
     console.error("Database migration check failed:", error);
     throw error;

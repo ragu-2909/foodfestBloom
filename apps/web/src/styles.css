@@ -1069,7 +1069,7 @@ textarea {
 /* Layout Media Queries adjustment for PC */
 @media (min-width: 1024px) {
   .dashboard-layout {
-    grid-template-columns: 1.10fr 1fr 1.05fr;
+    grid-template-columns: 1fr 1.25fr;
     max-width: 1280px;
   }
   
