@@ -125,18 +125,63 @@ export const runMigrations = async () => {
       console.log("Color reservation migrations applied successfully!");
     }
 
-    // Add color selection open configuration
+    // Add color selection settings (open flag + timed window)
     await query(`
       INSERT INTO settings (key, value)
-      VALUES ('color_selection_open', 'false')
+      VALUES
+        ('color_selection_open', 'false'),
+        ('color_selection_start_time', 'null'),
+        ('color_selection_end_time', 'null')
       ON CONFLICT (key) DO NOTHING;
+    `);
+
+    // Ensure every team gets an invitation token automatically, not just the
+    // ones that existed at the time of the original backfill.
+    await query(`
+      ALTER TABLE teams ALTER COLUMN invitation_token SET DEFAULT gen_random_uuid()::text;
+      UPDATE teams SET invitation_token = gen_random_uuid()::text WHERE invitation_token IS NULL;
+    `);
+
+    // Remove the sample placeholder teams shipped by the initial migration —
+    // real participant data now comes from the event's Excel export.
+    await query(`
+      DELETE FROM teams
+      WHERE name IN ('Team Alpha', 'Team Bravo', 'Team Charlie')
+        AND created_by IS NULL
+        AND selection_completed = false;
     `);
 
     // Update event_name to Taste of Bloom if it is still Food Fest Live
     await query(`
-      UPDATE settings 
+      UPDATE settings
       SET value = '"Taste of Bloom"'
       WHERE key = 'event_name' AND (value = '"Food Fest Live"' OR value = '""');
+    `);
+
+    // Judge voting: table numbers (for QR / manual lookup) and score records.
+    await query(`
+      ALTER TABLE teams ADD COLUMN IF NOT EXISTS table_number INTEGER;
+      CREATE UNIQUE INDEX IF NOT EXISTS teams_table_number_idx ON teams(table_number) WHERE table_number IS NOT NULL;
+
+      CREATE TABLE IF NOT EXISTS judge_scores (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+        judge_name TEXT NOT NULL,
+        hygiene SMALLINT NOT NULL CHECK (hygiene BETWEEN 1 AND 10),
+        dress_code SMALLINT NOT NULL CHECK (dress_code BETWEEN 1 AND 10),
+        sweet SMALLINT NOT NULL CHECK (sweet BETWEEN 1 AND 10),
+        savoury SMALLINT NOT NULL CHECK (savoury BETWEEN 1 AND 10),
+        taste SMALLINT NOT NULL CHECK (taste BETWEEN 1 AND 10),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS judge_scores_team_judge_idx ON judge_scores(team_id, lower(judge_name));
+    `);
+
+    await query(`
+      INSERT INTO settings (key, value)
+      VALUES ('judge_passcode', '"2026"')
+      ON CONFLICT (key) DO NOTHING;
     `);
 
   } catch (error) {

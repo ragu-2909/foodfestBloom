@@ -2,8 +2,8 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { audit, asyncHandler } from "../logger.js";
 import { isUniqueViolation, query } from "../db.js";
-import { registrationSchema, voteSchema } from "../validation.js";
-import { getSetting, getVotingState } from "../services/settings.js";
+import { voteSchema } from "../validation.js";
+import { getSetting, getVotingState, getColorSelectionState } from "../services/settings.js";
 import { getSnapshot, rebuildTally } from "../services/tally.js";
 
 export const publicRouter = Router();
@@ -32,56 +32,11 @@ publicRouter.get(
   "/settings/public",
   asyncHandler(async (_req, res) => {
     res.json({
-      eventName: await getSetting<string>("event_name", "Food Fest Live"),
-      registrationOpen: await getSetting<boolean>("registration_open", true),
+      eventName: await getSetting<string>("event_name", "Taste of Bloom"),
       showLiveResults: await getSetting<boolean>("show_live_results", true),
-      voting: await getVotingState()
+      voting: await getVotingState(),
+      colorSelection: await getColorSelectionState()
     });
-  })
-);
-
-publicRouter.post(
-  "/register",
-  writeLimiter,
-  asyncHandler(async (req, res) => {
-    const parsed = registrationSchema.safeParse(req.body);
-    if (!parsed.success) {
-      await audit(req, "registration_validation_failed", 400, parsed.error.flatten());
-      res.status(400).json({ message: "Please check the registration form and try again." });
-      return;
-    }
-
-    const registrationOpen = await getSetting<boolean>("registration_open", true);
-    if (!registrationOpen) {
-      await audit(req, "registration_closed", 403, {}, parsed.data.email);
-      res.status(403).json({ message: "Registration is currently closed." });
-      return;
-    }
-
-    try {
-      await query(
-        `INSERT INTO registrations(email, employee_name, team_name, team_members, food_category, contact_number, description)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          parsed.data.email,
-          parsed.data.employeeName,
-          parsed.data.teamName,
-          parsed.data.teamMembers,
-          parsed.data.foodCategory,
-          parsed.data.contactNumber,
-          parsed.data.description ?? null
-        ]
-      );
-      await audit(req, "registration_created", 201, {}, parsed.data.email);
-      res.status(201).json({ message: "Registration submitted successfully." });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        await audit(req, "registration_duplicate", 409, {}, parsed.data.email);
-        res.status(409).json({ message: "You've already registered." });
-        return;
-      }
-      throw error;
-    }
   })
 );
 
@@ -92,7 +47,7 @@ publicRouter.post(
     const parsed = voteSchema.safeParse(req.body);
     if (!parsed.success) {
       await audit(req, "vote_validation_failed", 400, parsed.error.flatten());
-      res.status(400).json({ message: "Please check your email and team choice." });
+      res.status(400).json({ message: "Please check your selection and try again." });
       return;
     }
 

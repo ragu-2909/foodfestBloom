@@ -8,6 +8,7 @@ import { adminRouter } from "./routes/admin.js";
 import { eventsRouter } from "./routes/events.js";
 import { exportRouter } from "./routes/export.js";
 import { colorsRouter } from "./routes/colors.js";
+import { judgeRouter } from "./routes/judge.js";
 
 const getAllowedOrigins = () => {
   const configured = (config.corsOrigins ?? config.frontendOrigin)
@@ -63,6 +64,7 @@ export const createApp = () => {
   app.use(adminRouter);
   app.use(exportRouter);
   app.use(colorsRouter);
+  app.use(judgeRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ message: "Route not found." });

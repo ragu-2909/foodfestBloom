@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 30% 97%;
+    --foreground: 200 20% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 200 20% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 20% 14%;
+
+    --primary: 186 68% 24%;
+    --primary-foreground: 40 40% 98%;
+
+    --secondary: 152 42% 20%;
+    --secondary-foreground: 40 40% 98%;
+
+    --accent: 32 92% 55%;
+    --accent-foreground: 24 45% 12%;
+
+    --muted: 190 20% 94%;
+    --muted-foreground: 200 12% 42%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 190 20% 87%;
+    --input: 190 20% 87%;
+    --ring: 186 68% 24%;
+
+    --radius: 0.9rem;
+  }
+
+  :root[data-theme="dark"] {
+    --background: 195 45% 8%;
+    --foreground: 40 30% 95%;
+
+    --card: 196 40% 11%;
+    --card-foreground: 40 30% 95%;
+
+    --popover: 196 40% 11%;
+    --popover-foreground: 40 30% 95%;
+
+    --primary: 186 55% 45%;
+    --primary-foreground: 196 45% 8%;
+
+    --secondary: 152 35% 30%;
+    --secondary-foreground: 40 30% 95%;
+
+    --accent: 32 92% 58%;
+    --accent-foreground: 24 45% 10%;
+
+    --muted: 196 30% 16%;
+    --muted-foreground: 190 15% 65%;
+
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 196 30% 20%;
+    --input: 196 30% 20%;
+    --ring: 186 55% 45%;
+  }
+
+  /* This is a public event kiosk/voting app — it always renders the same
+     light theme regardless of the viewer's OS color-scheme preference.
+     (Auto-switching to dark previously caused near-invisible text on the
+     hardcoded white cards used throughout the public pages.) */
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .bg-brand-gradient {
+    background: radial-gradient(
+        circle at 15% 10%,
+        hsl(186 65% 30% / 0.55),
+        transparent 45%
+      ),
+      radial-gradient(circle at 85% 90%, hsl(32 92% 55% / 0.3), transparent 50%),
+      linear-gradient(160deg, hsl(190 62% 16%), hsl(186 55% 10%) 60%, hsl(152 40% 12%));
+  }
+
+  .text-shadow-soft {
+    text-shadow: 0 2px 12px rgb(0 0 0 / 0.25);
+  }
+}

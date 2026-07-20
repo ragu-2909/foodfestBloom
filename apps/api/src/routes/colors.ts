@@ -2,12 +2,13 @@ import { Router } from "express";
 import jwt from "jsonwebtoken";
 import { config } from "../config.js";
 import { asyncHandler } from "../logger.js";
-import { getSetting } from "../services/settings.js";
+import { getColorSelectionState } from "../services/settings.js";
 import {
   validateInvitationToken,
   getColorsState,
   reserveColor,
   confirmColor,
+  releaseTeamReservation,
   subscribeColors,
   unsubscribeColors
 } from "../services/colors.js";
@@ -19,8 +20,8 @@ colorsRouter.get(
   "/colors/validate-token",
   asyncHandler(async (req, res) => {
     const token = String(req.query.token || "");
-    const colorSelectionOpen = await getSetting<boolean>("color_selection_open", false);
-    
+    const colorSelection = await getColorSelectionState();
+
     const team = await validateInvitationToken(token);
     if (!team) {
       res.status(400).json({ valid: false, message: "Invalid invitation. Please contact event organizers." });
@@ -30,7 +31,8 @@ colorsRouter.get(
     res.json({
       valid: true,
       team,
-      colorSelectionOpen
+      colorSelectionOpen: colorSelection.open,
+      colorSelection
     });
   })
 );
@@ -50,7 +52,7 @@ colorsRouter.post(
   asyncHandler(async (req, res) => {
     const { token, colorId } = req.body;
     
-    const colorSelectionOpen = await getSetting<boolean>("color_selection_open", false);
+    const colorSelectionOpen = (await getColorSelectionState()).open;
     if (!colorSelectionOpen) {
       res.status(403).json({ message: "Color selection is not currently open." });
       return;
@@ -85,7 +87,7 @@ colorsRouter.post(
   asyncHandler(async (req, res) => {
     const { token, colorId } = req.body;
 
-    const colorSelectionOpen = await getSetting<boolean>("color_selection_open", false);
+    const colorSelectionOpen = (await getColorSelectionState()).open;
     if (!colorSelectionOpen) {
       res.status(403).json({ message: "Color selection is not currently open." });
       return;
@@ -111,6 +113,28 @@ colorsRouter.post(
   })
 );
 
+// Voluntary cancellation of an active 2-minute hold
+colorsRouter.post(
+  "/colors/release",
+  asyncHandler(async (req, res) => {
+    const { token } = req.body;
+
+    const team = await validateInvitationToken(token);
+    if (!team) {
+      res.status(400).json({ message: "Invalid invitation." });
+      return;
+    }
+
+    if (team.selectionCompleted) {
+      res.status(400).json({ message: "Your color selection is already locked in." });
+      return;
+    }
+
+    await releaseTeamReservation(team.id, team.name);
+    res.json({ message: "Reservation released." });
+  })
+);
+
 // Real-time SSE synchronization & presence endpoint
 colorsRouter.get(
   "/colors/stream",
@@ -121,7 +145,7 @@ colorsRouter.get(
 
     if (!team) {
       try {
-        const payload = jwt.verify(token, config.jwtSecret) as { email: string; role: string };
+        const payload = jwt.verify(token, config.jwtSecret) as { username: string; role: string };
         if (payload.role === "admin") {
           isAdminConnection = true;
           team = { id: "admin", name: "Admin Dashboard" } as any;

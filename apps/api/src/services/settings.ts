@@ -61,3 +61,41 @@ export const getVotingState = async () => {
     remainingMs
   };
 };
+
+const parseDate = (val: unknown) => {
+  if (!val || val === "null") return null;
+  const d = new Date(val as string);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+export const getColorSelectionWindow = async () => {
+  const [open, startTime, endTime] = await Promise.all([
+    getSetting<boolean>("color_selection_open", false),
+    getSetting<string | null>("color_selection_start_time", null),
+    getSetting<string | null>("color_selection_end_time", null)
+  ]);
+
+  return {
+    open,
+    startTime: parseDate(startTime),
+    endTime: parseDate(endTime)
+  };
+};
+
+export const getColorSelectionState = async () => {
+  const { open, startTime, endTime } = await getColorSelectionWindow();
+  const now = new Date();
+  const hasStarted = Boolean(open && startTime && now >= startTime);
+  const hasEnded = Boolean(!open || (endTime && now > endTime));
+  const remainingMs = endTime ? Math.max(0, endTime.getTime() - now.getTime()) : 0;
+
+  return {
+    open,
+    hasStarted,
+    hasEnded,
+    serverTime: now.toISOString(),
+    startTime: startTime?.toISOString() ?? null,
+    endTime: endTime?.toISOString() ?? null,
+    remainingMs
+  };
+};

@@ -69,17 +69,9 @@ CREATE TABLE IF NOT EXISTS event_assets (
 
 INSERT INTO settings(key, value)
 VALUES
-  ('registration_open', 'true'),
   ('voting_open', 'false'),
   ('voting_start_time', 'null'),
   ('voting_end_time', 'null'),
   ('show_live_results', 'true'),
-  ('event_name', '"Food Fest Live"')
+  ('event_name', '"Taste of Bloom"')
 ON CONFLICT (key) DO NOTHING;
-
-INSERT INTO teams(name, description, members, category)
-VALUES
-  ('Team Alpha', 'Signature dishes from Team Alpha.', 'Alpha members', 'Main Course'),
-  ('Team Bravo', 'Fresh snacks and festival favorites.', 'Bravo members', 'Snacks'),
-  ('Team Charlie', 'Desserts and sweet plates.', 'Charlie members', 'Dessert')
-ON CONFLICT DO NOTHING;

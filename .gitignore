@@ -11,3 +11,9 @@ uploads/
 backups/
 .DS_Store
 Thumbs.db
+
+# Participant data contains real names/department info — keep out of git,
+# especially since this repo is public. Share the sheet out-of-band and run
+# `npm run seed:participants` locally.
+*.xlsx
+apps/api/db/seed-data/

@@ -1,5 +1,6 @@
 import { Response } from "express";
 import { query } from "../db.js";
+import { getColorSelectionWindow, setSetting } from "./settings.js";
 
 export interface Color {
   id: string;
@@ -275,7 +276,65 @@ export const releaseTeamReservation = async (teamId: string, teamName: string) =
   }
 };
 
+// Admin override: reassign or clear a team's color selection
+export const adminSetTeamColor = async (teamId: string, colorId: string | null) => {
+  const teamResult = await query<{ id: string; name: string; selectedColorId: string | null }>(
+    `SELECT id, name, selected_color_id AS "selectedColorId" FROM teams WHERE id = $1`,
+    [teamId]
+  );
+  const team = teamResult.rows[0];
+  if (!team) {
+    throw new Error("Team not found.");
+  }
+
+  // Release the team's current booked/reserved color, if any.
+  if (team.selectedColorId) {
+    await query(
+      `UPDATE colors
+       SET status = 'available', booked_by_team_id = null, reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
+       WHERE id = $1 AND (booked_by_team_id = $2 OR reserved_by_team_id = $2)`,
+      [team.selectedColorId, teamId]
+    );
+  }
+  await query(
+    `UPDATE colors
+     SET status = 'available', reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
+     WHERE reserved_by_team_id = $1 AND status = 'reserved'`,
+    [teamId]
+  );
+
+  if (colorId) {
+    const bookResult = await query<{ name: string }>(
+      `UPDATE colors
+       SET status = 'booked', booked_by_team_id = $1, reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
+       WHERE id = $2 AND status = 'available'
+       RETURNING name`,
+      [teamId, colorId]
+    );
+
+    if (bookResult.rowCount === 0) {
+      throw new Error("That color is not available to assign right now.");
+    }
+
+    await query(
+      `UPDATE teams SET selected_color_id = $2, selection_completed = true, selection_completed_at = now() WHERE id = $1`,
+      [teamId, colorId]
+    );
+    addActivityLog(`Admin assigned ${bookResult.rows[0].name} to team ${team.name}`);
+  } else {
+    await query(
+      `UPDATE teams SET selected_color_id = null, selection_completed = false, selection_completed_at = null WHERE id = $1`,
+      [teamId]
+    );
+    addActivityLog(`Admin cleared color selection for team ${team.name}`);
+  }
+
+  const colors = await getColorsState();
+  broadcastColorEvent("ADMIN_UPDATED", { colors, activityLogs, teamId, colorId });
+};
+
 // Background scheduler running every second to release expired reservations
+// and auto-close the color-selection window once its duration elapses.
 export const startExpirationScheduler = () => {
   setInterval(async () => {
     try {
@@ -295,6 +354,13 @@ export const startExpirationScheduler = () => {
           colors,
           activityLogs
         });
+      }
+
+      const window = await getColorSelectionWindow();
+      if (window.open && window.endTime && window.endTime.getTime() < Date.now()) {
+        await setSetting("color_selection_open", false);
+        addActivityLog("Color selection window closed automatically.");
+        broadcastColorEvent("SELECTION_CLOSED", { activityLogs });
       }
     } catch (err) {
       console.error("Expired color cleanup failed:", err);

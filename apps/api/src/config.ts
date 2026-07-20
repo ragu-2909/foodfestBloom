@@ -1,5 +1,13 @@
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The single .env lives at the repo root, but this workspace package is
+// often run with its own directory as cwd (e.g. `npm run dev --workspace
+// apps/api`), which makes dotenv's default cwd-relative lookup miss it.
+dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 dotenv.config();
 
 const required = (key: string, fallback?: string) => {
@@ -18,7 +26,7 @@ export const config = {
   corsOrigins: process.env.CORS_ORIGINS,
   databaseUrl: required("DATABASE_URL", "postgres://foodfest:foodfest@localhost:5432/foodfest"),
   poolMax: Number(process.env.PG_POOL_MAX ?? 12),
-  adminEmail: required("ADMIN_EMAIL", "admin@company.com"),
+  adminUsername: required("ADMIN_USERNAME", "admin"),
   adminPassword: required("ADMIN_PASSWORD", "change-this-password"),
   jwtSecret: required("JWT_SECRET", "change-this-long-random-secret"),
   publicApiUrl: process.env.PUBLIC_API_URL ?? `https://foodfest-bloom-web-qfuh.vercel.app:${process.env.PORT ?? 3000}`

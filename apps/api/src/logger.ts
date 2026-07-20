@@ -18,7 +18,7 @@ export const audit = async (
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         action,
-        performedBy ?? req.user?.email ?? null,
+        performedBy ?? req.user?.username ?? null,
         req.ip,
         email ?? null,
         req.originalUrl,
