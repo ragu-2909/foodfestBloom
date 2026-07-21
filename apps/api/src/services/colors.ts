@@ -1,18 +1,22 @@
 import { Response } from "express";
-import { query } from "../db.js";
+import { pool, query } from "../db.js";
 import { getColorSelectionWindow, setSetting } from "./settings.js";
+
+export interface ColorBooking {
+  teamId: string;
+  teamName: string;
+  status: "reserved" | "booked";
+  reservationExpiresAt: string | null;
+  remainingMs: number;
+}
 
 export interface Color {
   id: string;
   name: string;
   hexCode: string;
-  status: "available" | "reserved" | "booked";
-  reservedByTeamId: string | null;
-  reservedByTeamName: string | null;
-  bookedByTeamId: string | null;
-  bookedByTeamName: string | null;
-  reservationExpiresAt: string | null;
-  remainingMs: number;
+  capacity: number;
+  remaining: number;
+  bookings: ColorBooking[];
 }
 
 export interface OnlineTeam {
@@ -65,46 +69,52 @@ export const getOnlineTeamsList = (): string[] => {
   return Array.from(new Set(names)).sort();
 };
 
-// Fetch current color states with remaining durations calculated
+// Fetch current color states with remaining slot counts and per-team bookings
 export const getColorsState = async (): Promise<Color[]> => {
   const result = await query(
-    `SELECT 
-      c.id, 
-      c.name, 
-      c.hex_code AS "hexCode", 
-      c.status,
-      c.reserved_by_team_id AS "reservedByTeamId",
-      tr.name AS "reservedByTeamName",
-      c.booked_by_team_id AS "bookedByTeamId",
-      tb.name AS "bookedByTeamName",
-      c.reservation_expires_at AS "reservationExpiresAt"
+    `SELECT
+      c.id,
+      c.name,
+      c.hex_code AS "hexCode",
+      c.capacity,
+      cb.team_id AS "teamId",
+      t.name AS "teamName",
+      cb.status AS "bookingStatus",
+      cb.reservation_expires_at AS "reservationExpiresAt"
      FROM colors c
-     LEFT JOIN teams tr ON tr.id = c.reserved_by_team_id
-     LEFT JOIN teams tb ON tb.id = c.booked_by_team_id
-     ORDER BY c.name ASC`
+     LEFT JOIN color_bookings cb ON cb.color_id = c.id
+       AND (cb.status = 'booked' OR cb.reservation_expires_at > now())
+     LEFT JOIN teams t ON t.id = cb.team_id
+     ORDER BY c.name ASC, cb.created_at ASC NULLS LAST`
   );
 
   const now = Date.now();
-  return result.rows.map((row: any) => {
-    let remainingMs = 0;
-    if (row.status === "reserved" && row.reservationExpiresAt) {
-      const expires = new Date(row.reservationExpiresAt).getTime();
-      remainingMs = Math.max(0, expires - now);
+  const byId = new Map<string, Color>();
+
+  for (const row of result.rows as any[]) {
+    let color = byId.get(row.id);
+    if (!color) {
+      color = { id: row.id, name: row.name, hexCode: row.hexCode, capacity: row.capacity, remaining: row.capacity, bookings: [] };
+      byId.set(row.id, color);
     }
 
-    return {
-      id: row.id,
-      name: row.name,
-      hexCode: row.hexCode,
-      status: row.status,
-      reservedByTeamId: row.reservedByTeamId,
-      reservedByTeamName: row.reservedByTeamName,
-      bookedByTeamId: row.bookedByTeamId,
-      bookedByTeamName: row.bookedByTeamName,
-      reservationExpiresAt: row.reservationExpiresAt,
-      remainingMs
-    };
-  });
+    if (row.teamId) {
+      let remainingMs = 0;
+      if (row.bookingStatus === "reserved" && row.reservationExpiresAt) {
+        remainingMs = Math.max(0, new Date(row.reservationExpiresAt).getTime() - now);
+      }
+      color.bookings.push({
+        teamId: row.teamId,
+        teamName: row.teamName,
+        status: row.bookingStatus,
+        reservationExpiresAt: row.reservationExpiresAt,
+        remainingMs
+      });
+      color.remaining -= 1;
+    }
+  }
+
+  return Array.from(byId.values());
 };
 
 // Register client connection and track presence
@@ -149,11 +159,11 @@ export const validateInvitationToken = async (token: string) => {
   }
 
   const result = await query(
-    `SELECT 
-      t.id, 
-      t.name, 
-      t.members, 
-      t.selection_completed AS "selectionCompleted", 
+    `SELECT
+      t.id,
+      t.name,
+      t.members,
+      t.selection_completed AS "selectionCompleted",
       t.selection_completed_at AS "selectionCompletedAt",
       t.selected_color_id AS "selectedColorId",
       c.name AS "selectedColorName",
@@ -167,104 +177,131 @@ export const validateInvitationToken = async (token: string) => {
   return result.rows[0] || null;
 };
 
-// Atomic Color Reservation
+// Atomic Color Reservation — holds one of the color's remaining slots for 2 minutes
 export const reserveColor = async (teamId: string, teamName: string, colorId: string) => {
-  // First, release any existing reservation by this team
-  await query(
-    `UPDATE colors
-     SET status = 'available', reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
-     WHERE reserved_by_team_id = $1 AND status = 'reserved'`,
-    [teamId]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  // Next, try to reserve the new color atomically
-  const reserveResult = await query(
-    `UPDATE colors
-     SET 
-       status = 'reserved', 
-       reserved_by_team_id = $1, 
-       reservation_expires_at = now() + interval '2 minutes', 
-       updated_at = now()
-     WHERE id = $2 
-       AND status = 'available' 
-       AND (reservation_expires_at IS NULL OR reservation_expires_at < now())
-     RETURNING name`,
-    [teamId, colorId]
-  );
+    // Release any existing reservation held by this team (across any color)
+    await client.query(`DELETE FROM color_bookings WHERE team_id = $1 AND status = 'reserved'`, [teamId]);
 
-  if (reserveResult.rowCount === 0) {
-    throw new Error("Color already reserved or booked. Please choose another.");
+    // Best-effort cleanup of stale reservations before counting capacity
+    await client.query(`DELETE FROM color_bookings WHERE status = 'reserved' AND reservation_expires_at < now()`);
+
+    const colorResult = await client.query<{ name: string; capacity: number }>(
+      `SELECT name, capacity FROM colors WHERE id = $1 FOR UPDATE`,
+      [colorId]
+    );
+    const color = colorResult.rows[0];
+    if (!color) {
+      throw new Error("That color doesn't exist.");
+    }
+
+    const countResult = await client.query<{ count: string }>(
+      `SELECT COUNT(*) FROM color_bookings
+       WHERE color_id = $1 AND (status = 'booked' OR (status = 'reserved' AND reservation_expires_at > now()))`,
+      [colorId]
+    );
+    if (Number(countResult.rows[0].count) >= color.capacity) {
+      throw new Error("That color is full. Please choose another.");
+    }
+
+    const expiresAt = new Date(Date.now() + 120000);
+    await client.query(
+      `INSERT INTO color_bookings (color_id, team_id, status, reservation_expires_at)
+       VALUES ($1, $2, 'reserved', $3)`,
+      [colorId, teamId, expiresAt]
+    );
+
+    await client.query("COMMIT");
+
+    addActivityLog(`Team ${teamName} reserved ${color.name}`);
+
+    const colors = await getColorsState();
+    broadcastColorEvent("COLOR_RESERVED", {
+      colors,
+      activityLogs,
+      teamId,
+      colorId,
+      colorName: color.name
+    });
+
+    return { colorName: color.name, expiresAt: expiresAt.toISOString() };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const colorName = reserveResult.rows[0].name;
-  addActivityLog(`Team ${teamName} reserved ${colorName}`);
-
-  // Broadcast status update
-  const colors = await getColorsState();
-  broadcastColorEvent("COLOR_RESERVED", {
-    colors,
-    activityLogs,
-    teamId,
-    colorId,
-    colorName
-  });
-
-  return { colorName, expiresAt: new Date(Date.now() + 120000).toISOString() };
 };
 
 // Confirm Color Reservation (Book Permanent)
 export const confirmColor = async (teamId: string, teamName: string, colorId: string) => {
-  // 1. Mark color status as 'booked'
-  const bookResult = await query(
-    `UPDATE colors
-     SET status = 'booked', booked_by_team_id = $1, reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
-     WHERE id = $2 AND reserved_by_team_id = $1 AND status = 'reserved' AND reservation_expires_at > now()
-     RETURNING name`,
-    [teamId, colorId]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (bookResult.rowCount === 0) {
-    throw new Error("Your reservation has expired or is invalid. Please select the color again.");
+    const bookResult = await client.query<{ name: string }>(
+      `UPDATE color_bookings cb
+       SET status = 'booked', reservation_expires_at = null
+       FROM colors c
+       WHERE cb.color_id = c.id
+         AND cb.team_id = $1
+         AND cb.color_id = $2
+         AND cb.status = 'reserved'
+         AND cb.reservation_expires_at > now()
+       RETURNING c.name AS name`,
+      [teamId, colorId]
+    );
+
+    if (bookResult.rowCount === 0) {
+      throw new Error("Your reservation has expired or is invalid. Please select the color again.");
+    }
+
+    const colorName = bookResult.rows[0].name;
+
+    await client.query(
+      `UPDATE teams
+       SET selected_color_id = $2, selection_completed = true, selection_completed_at = now()
+       WHERE id = $1`,
+      [teamId, colorId]
+    );
+
+    await client.query("COMMIT");
+
+    addActivityLog(`Team ${teamName} BOOKED ${colorName}`);
+
+    const colors = await getColorsState();
+    broadcastColorEvent("COLOR_BOOKED", {
+      colors,
+      activityLogs,
+      teamId,
+      colorId,
+      colorName
+    });
+
+    return { colorName };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const colorName = bookResult.rows[0].name;
-
-  // 2. Mark selection completed in teams table
-  await query(
-    `UPDATE teams
-     SET selected_color_id = $2, selection_completed = true, selection_completed_at = now()
-     WHERE id = $1`,
-    [teamId, colorId]
-  );
-
-  addActivityLog(`Team ${teamName} BOOKED ${colorName}`);
-
-  // Broadcast status update
-  const colors = await getColorsState();
-  broadcastColorEvent("COLOR_BOOKED", {
-    colors,
-    activityLogs,
-    teamId,
-    colorId,
-    colorName
-  });
-
-  return { colorName };
 };
 
 // Release active reservation manually (for cleanup or cancellation)
 export const releaseTeamReservation = async (teamId: string, teamName: string) => {
-  const result = await query(
-    `UPDATE colors
-     SET status = 'available', reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
-     WHERE reserved_by_team_id = $1 AND status = 'reserved'
-     RETURNING name, id`,
+  const result = await query<{ id: string; name: string }>(
+    `WITH deleted AS (
+       DELETE FROM color_bookings WHERE team_id = $1 AND status = 'reserved' RETURNING color_id
+     )
+     SELECT c.id, c.name FROM deleted d JOIN colors c ON c.id = d.color_id`,
     [teamId]
   );
 
   if (result.rowCount && result.rowCount > 0) {
-    const colorName = result.rows[0].name;
-    const colorId = result.rows[0].id;
+    const { id: colorId, name: colorName } = result.rows[0];
     addActivityLog(`Team ${teamName} released reservation for ${colorName}`);
     const colors = await getColorsState();
     broadcastColorEvent("COLOR_RELEASED", {
@@ -287,40 +324,48 @@ export const adminSetTeamColor = async (teamId: string, colorId: string | null) 
     throw new Error("Team not found.");
   }
 
-  // Release the team's current booked/reserved color, if any.
-  if (team.selectedColorId) {
-    await query(
-      `UPDATE colors
-       SET status = 'available', booked_by_team_id = null, reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
-       WHERE id = $1 AND (booked_by_team_id = $2 OR reserved_by_team_id = $2)`,
-      [team.selectedColorId, teamId]
-    );
-  }
-  await query(
-    `UPDATE colors
-     SET status = 'available', reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
-     WHERE reserved_by_team_id = $1 AND status = 'reserved'`,
-    [teamId]
-  );
+  // Clear this team's existing booking/reservation, if any.
+  await query(`DELETE FROM color_bookings WHERE team_id = $1`, [teamId]);
 
   if (colorId) {
-    const bookResult = await query<{ name: string }>(
-      `UPDATE colors
-       SET status = 'booked', booked_by_team_id = $1, reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
-       WHERE id = $2 AND status = 'available'
-       RETURNING name`,
-      [teamId, colorId]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    if (bookResult.rowCount === 0) {
-      throw new Error("That color is not available to assign right now.");
+      const colorResult = await client.query<{ name: string; capacity: number }>(
+        `SELECT name, capacity FROM colors WHERE id = $1 FOR UPDATE`,
+        [colorId]
+      );
+      const color = colorResult.rows[0];
+      if (!color) {
+        throw new Error("That color is not available to assign right now.");
+      }
+
+      const countResult = await client.query<{ count: string }>(
+        `SELECT COUNT(*) FROM color_bookings WHERE color_id = $1 AND status = 'booked'`,
+        [colorId]
+      );
+      if (Number(countResult.rows[0].count) >= color.capacity) {
+        throw new Error("That color is already full.");
+      }
+
+      await client.query(
+        `INSERT INTO color_bookings (color_id, team_id, status) VALUES ($1, $2, 'booked')`,
+        [colorId, teamId]
+      );
+      await client.query(
+        `UPDATE teams SET selected_color_id = $2, selection_completed = true, selection_completed_at = now() WHERE id = $1`,
+        [teamId, colorId]
+      );
+
+      await client.query("COMMIT");
+      addActivityLog(`Admin assigned ${color.name} to team ${team.name}`);
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
-
-    await query(
-      `UPDATE teams SET selected_color_id = $2, selection_completed = true, selection_completed_at = now() WHERE id = $1`,
-      [teamId, colorId]
-    );
-    addActivityLog(`Admin assigned ${bookResult.rows[0].name} to team ${team.name}`);
   } else {
     await query(
       `UPDATE teams SET selected_color_id = null, selection_completed = false, selection_completed_at = null WHERE id = $1`,
@@ -338,16 +383,19 @@ export const adminSetTeamColor = async (teamId: string, colorId: string | null) 
 export const startExpirationScheduler = () => {
   setInterval(async () => {
     try {
-      const expired = await query<{ id: string; name: string }>(
-        `UPDATE colors
-         SET status = 'available', reserved_by_team_id = null, reservation_expires_at = null, updated_at = now()
-         WHERE status = 'reserved' AND reservation_expires_at < now()
-         RETURNING id, name`
+      const expired = await query<{ colorId: string; colorName: string }>(
+        `WITH deleted AS (
+           DELETE FROM color_bookings
+           WHERE status = 'reserved' AND reservation_expires_at < now()
+           RETURNING color_id
+         )
+         SELECT d.color_id AS "colorId", c.name AS "colorName"
+         FROM deleted d JOIN colors c ON c.id = d.color_id`
       );
 
       if (expired.rowCount && expired.rowCount > 0) {
         for (const row of expired.rows) {
-          addActivityLog(`Reservation for ${row.name} expired`);
+          addActivityLog(`Reservation for ${row.colorName} expired`);
         }
         const colors = await getColorsState();
         broadcastColorEvent("TIMER_EXPIRED", {

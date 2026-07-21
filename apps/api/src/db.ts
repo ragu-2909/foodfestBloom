@@ -76,12 +76,19 @@ export const runMigrations = async () => {
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           name TEXT NOT NULL UNIQUE,
           hex_code TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'reserved', 'booked')),
-          reserved_by_team_id UUID,
-          booked_by_team_id UUID,
-          reservation_expires_at TIMESTAMPTZ,
+          capacity INTEGER NOT NULL DEFAULT 3,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+
+        CREATE TABLE IF NOT EXISTS color_bookings (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          color_id UUID NOT NULL REFERENCES colors(id) ON DELETE CASCADE,
+          team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+          status TEXT NOT NULL CHECK (status IN ('reserved', 'booked')),
+          reservation_expires_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS color_bookings_team_unique_idx ON color_bookings(team_id);
 
         ALTER TABLE teams ADD COLUMN IF NOT EXISTS selected_color_id UUID REFERENCES colors(id) ON DELETE SET NULL;
         ALTER TABLE teams ADD COLUMN IF NOT EXISTS selection_completed BOOLEAN DEFAULT false;
@@ -94,35 +101,68 @@ export const runMigrations = async () => {
         -- Populate tokens for existing teams
         UPDATE teams SET invitation_token = gen_random_uuid()::text WHERE invitation_token IS NULL;
 
-        -- Insert default colors
-        INSERT INTO colors (name, hex_code)
+        -- Final palette for Taste of Bloom Season 3: 6 colors, 3 team slots each
+        INSERT INTO colors (name, hex_code, capacity)
         VALUES
-          ('Crimson Red', '#EF4444'),
-          ('Emerald Green', '#10B981'),
-          ('Royal Blue', '#3B82F6'),
-          ('Amber Yellow', '#F59E0B'),
-          ('Grape Purple', '#8B5CF6'),
-          ('Hot Pink', '#EC4899'),
-          ('Sunset Orange', '#F97316'),
-          ('Teal Aqua', '#06B6D4'),
-          ('Mint Green', '#34D399'),
-          ('Indigo Violet', '#6366F1'),
-          ('Slate Gray', '#64748B'),
-          ('Rose Gold', '#FDA4AF')
+          ('Orange', '#F97316', 3),
+          ('Yellow', '#FACC15', 3),
+          ('Green', '#16A34A', 3),
+          ('Maroon', '#7F1D1D', 3),
+          ('White', '#FFFFFF', 3),
+          ('Purple', '#7C3AED', 3)
         ON CONFLICT (name) DO NOTHING;
       `);
 
-      // Add constraints
-      try {
-        await query(`
-          ALTER TABLE colors ADD CONSTRAINT fk_colors_reserved_by FOREIGN KEY (reserved_by_team_id) REFERENCES teams(id) ON DELETE SET NULL;
-          ALTER TABLE colors ADD CONSTRAINT fk_colors_booked_by FOREIGN KEY (booked_by_team_id) REFERENCES teams(id) ON DELETE SET NULL;
-        `);
-      } catch (err) {
-        // Constraints might already exist
-      }
-
       console.log("Color reservation migrations applied successfully!");
+    }
+
+    // Migrate legacy single-slot colors schema (status / reserved_by_team_id /
+    // booked_by_team_id, one team per color) to the capacity-based
+    // color_bookings model (multiple teams per color, up to `capacity`), and
+    // reseed the final 6-color / 3-slot-each palette confirmed for the event.
+    const capacityCheck = await query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT FROM information_schema.columns
+         WHERE table_name = 'colors' AND column_name = 'capacity'
+       )`
+    );
+
+    if (!capacityCheck.rows[0]?.exists) {
+      console.log("Migrating colors to capacity-based booking model...");
+      await query(`
+        CREATE TABLE IF NOT EXISTS color_bookings (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          color_id UUID NOT NULL REFERENCES colors(id) ON DELETE CASCADE,
+          team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+          status TEXT NOT NULL CHECK (status IN ('reserved', 'booked')),
+          reservation_expires_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS color_bookings_team_unique_idx ON color_bookings(team_id);
+
+        ALTER TABLE colors DROP CONSTRAINT IF EXISTS fk_colors_reserved_by;
+        ALTER TABLE colors DROP CONSTRAINT IF EXISTS fk_colors_booked_by;
+        ALTER TABLE colors ADD COLUMN IF NOT EXISTS capacity INTEGER NOT NULL DEFAULT 3;
+        ALTER TABLE colors DROP COLUMN IF EXISTS status;
+        ALTER TABLE colors DROP COLUMN IF EXISTS reserved_by_team_id;
+        ALTER TABLE colors DROP COLUMN IF EXISTS booked_by_team_id;
+        ALTER TABLE colors DROP COLUMN IF EXISTS reservation_expires_at;
+
+        -- This is the final confirmed palette for the event: reset any
+        -- selections made under the old scheme and reseed exactly these 6
+        -- colors with 3 slots each.
+        UPDATE teams SET selected_color_id = null, selection_completed = false, selection_completed_at = null;
+        DELETE FROM colors;
+
+        INSERT INTO colors (name, hex_code, capacity) VALUES
+          ('Orange', '#F97316', 3),
+          ('Yellow', '#FACC15', 3),
+          ('Green', '#16A34A', 3),
+          ('Maroon', '#7F1D1D', 3),
+          ('White', '#FFFFFF', 3),
+          ('Purple', '#7C3AED', 3);
+      `);
+      console.log("Colors migrated to final 6-color / 3-slot palette.");
     }
 
     // Add color selection settings (open flag + timed window)

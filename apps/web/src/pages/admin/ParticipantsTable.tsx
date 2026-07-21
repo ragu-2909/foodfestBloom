@@ -73,7 +73,7 @@ function ManageColorDialog({
   const [value, setValue] = useState(team.selectedColorId ?? NO_COLOR);
   const [busy, setBusy] = useState(false);
 
-  const assignable = colors.filter((c) => c.status === "available" || c.id === team.selectedColorId);
+  const assignable = colors.filter((c) => c.remaining > 0 || c.id === team.selectedColorId);
 
   const submit = async () => {
     setBusy(true);
@@ -182,17 +182,18 @@ export function ParticipantsTable({
           </TableHeader>
           <TableBody>
             {teams.map((team) => {
-              const activeColor = colors.find((c) => c.bookedByTeamId === team.id || c.reservedByTeamId === team.id);
+              const activeColor = colors.find((c) => c.bookings.some((b) => b.teamId === team.id));
+              const myBooking = activeColor?.bookings.find((b) => b.teamId === team.id);
               let statusLabel = "Pending";
               let statusVariant: "muted" | "accent" | "success" = "muted";
               let timeLeft = "—";
               if (team.selectionCompleted) {
                 statusLabel = "Booked";
                 statusVariant = "success";
-              } else if (activeColor?.status === "reserved") {
+              } else if (myBooking?.status === "reserved") {
                 statusLabel = "Reserved";
                 statusVariant = "accent";
-                timeLeft = activeColor.remainingMs > 0 ? formatRemaining(activeColor.remainingMs) : "Expired";
+                timeLeft = myBooking.remainingMs > 0 ? formatRemaining(myBooking.remainingMs) : "Expired";
               }
 
               return (

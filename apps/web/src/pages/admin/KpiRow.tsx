@@ -23,7 +23,11 @@ export function KpiRow({ dashboard, colors }: { dashboard: AdminDashboard | null
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       <Stat icon={Users} label="Teams" value={dashboard?.metrics.teams ?? 0} />
       <Stat icon={Vote} label="Votes" value={dashboard?.metrics.votes ?? 0} />
-      <Stat icon={Palette} label="Colors Booked" value={colors.filter((c) => c.status === "booked").length} />
+      <Stat
+        icon={Palette}
+        label="Teams Booked"
+        value={colors.reduce((count, c) => count + c.bookings.filter((b) => b.status === "booked").length, 0)}
+      />
       <Stat icon={Gavel} label="Judge Entries" value={dashboard?.metrics.judgeEntries ?? 0} />
     </div>
   );

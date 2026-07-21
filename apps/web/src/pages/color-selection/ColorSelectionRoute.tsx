@@ -61,21 +61,28 @@ export default function ColorSelectionRoute() {
   // (color name/hex) to render the thank-you reveal.
   useEffect(() => {
     if (!team || team.selectionCompleted) return;
-    const nowBooked = colors.some((c) => c.status === "booked" && c.bookedByTeamId === team.id);
+    const nowBooked = colors.some((c) => c.bookings.some((b) => b.teamId === team.id && b.status === "booked"));
     if (nowBooked) refreshTeam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [colors, team]);
 
   const activeReservation = useMemo(
-    () => (team ? colors.find((c) => c.status === "reserved" && c.reservedByTeamId === team.id) ?? null : null),
+    () =>
+      team
+        ? colors.find((c) => c.bookings.some((b) => b.teamId === team.id && b.status === "reserved")) ?? null
+        : null,
     [colors, team]
   );
 
   const handleReserve = async (colorId: string) => {
+    if (submitting) return;
+    setSubmitting(true);
     try {
       await api("/colors/reserve", { method: "POST", body: JSON.stringify({ token, colorId }) });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't reserve that color. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 

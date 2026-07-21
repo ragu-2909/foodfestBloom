@@ -50,8 +50,6 @@ export function ThankYouReveal({ team }: { team: TeamInvite }) {
                 <p>{memberList.join(", ")}</p>
               </div>
             )}
-
-            <p className="text-xs text-muted-foreground">Get your apron ready — we'll see you at the event!</p>
           </CardContent>
         </Card>
       </motion.div>

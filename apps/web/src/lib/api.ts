@@ -50,17 +50,21 @@ export type PublicSettings = {
   colorSelection: ColorSelectionState;
 };
 
+export type ColorBooking = {
+  teamId: string;
+  teamName: string;
+  status: "reserved" | "booked";
+  reservationExpiresAt: string | null;
+  remainingMs: number;
+};
+
 export type ColorOption = {
   id: string;
   name: string;
   hexCode: string;
-  status: "available" | "reserved" | "booked";
-  reservedByTeamId: string | null;
-  reservedByTeamName: string | null;
-  bookedByTeamId: string | null;
-  bookedByTeamName: string | null;
-  reservationExpiresAt: string | null;
-  remainingMs: number;
+  capacity: number;
+  remaining: number;
+  bookings: ColorBooking[];
 };
 
 export type ActivityLogEntry = { time: string; text: string };

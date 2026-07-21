@@ -9,8 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError, ColorOption } from "@/lib/api";
 
-const statusVariant = (status: ColorOption["status"]) =>
-  status === "available" ? "muted" : status === "reserved" ? "accent" : "success";
+const capacityVariant = (color: ColorOption) =>
+  color.remaining <= 0 ? "success" : color.remaining < color.capacity ? "accent" : "muted";
 
 export function ColorPaletteManager({
   token,
@@ -99,15 +99,15 @@ export function ColorPaletteManager({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={statusVariant(color.status)} className="capitalize">
-                  {color.status}
+                <Badge variant={capacityVariant(color)}>
+                  {color.remaining}/{color.capacity} left
                 </Badge>
                 <Button
                   variant="ghost"
                   size="icon"
-                  disabled={color.status !== "available"}
+                  disabled={color.remaining !== color.capacity}
                   onClick={() => deleteColor(color.id)}
-                  title={color.status !== "available" ? "Only available colors can be removed" : "Remove color"}
+                  title={color.remaining !== color.capacity ? "Only colors with no reservations can be removed" : "Remove color"}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

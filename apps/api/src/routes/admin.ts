@@ -279,7 +279,7 @@ adminRouter.post(
   asyncHandler(async (req, res) => {
     await query("TRUNCATE votes, judge_scores, audit_logs RESTART IDENTITY");
     await query(`
-      UPDATE colors SET status = 'available', reserved_by_team_id = null, booked_by_team_id = null, reservation_expires_at = null, updated_at = now();
+      DELETE FROM color_bookings;
       UPDATE teams SET selected_color_id = null, selection_completed = false, selection_completed_at = null;
     `);
     await Promise.all([
@@ -308,8 +308,8 @@ adminRouter.post(
 
     try {
       await query(
-        `INSERT INTO colors(name, hex_code)
-         VALUES ($1, $2)
+        `INSERT INTO colors(name, hex_code, capacity)
+         VALUES ($1, $2, 3)
          ON CONFLICT (name) DO UPDATE SET hex_code = EXCLUDED.hex_code, updated_at = now()`,
         [name, hexCode]
       );
@@ -325,11 +325,13 @@ adminRouter.delete(
   "/admin/colors/:id",
   asyncHandler(async (req, res) => {
     const result = await query(
-      "DELETE FROM colors WHERE id = $1 AND status = 'available' RETURNING name",
+      `DELETE FROM colors
+       WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM color_bookings WHERE color_id = colors.id)
+       RETURNING name`,
       [req.params.id]
     );
     if (result.rowCount === 0) {
-      res.status(400).json({ message: "Only available (unreserved, unbooked) colors can be deleted." });
+      res.status(400).json({ message: "Only colors with no active reservations or bookings can be deleted." });
       return;
     }
     await audit(req, "color_deleted", 200, { id: req.params.id });
