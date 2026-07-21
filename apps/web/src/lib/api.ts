@@ -1,4 +1,6 @@
-export const API_URL = import.meta.env.PUBLIC_API_URL ?? "https://backend.ragu2909.pw";
+/** Same-origin by default: the app is served behind a reverse proxy that
+ * forwards /api to the backend, so no external host is ever contacted. */
+export const API_URL = import.meta.env.PUBLIC_API_URL ?? "/api";
 
 export type Team = {
   id: string;

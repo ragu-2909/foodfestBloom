@@ -5,8 +5,10 @@ services:
       POSTGRES_USER: foodfest
       POSTGRES_PASSWORD: foodfest
       POSTGRES_DB: foodfest
-    ports:
-      - "5432:5432"
+    # No published port: Postgres is reachable only from the api container
+    # on this compose network, never from outside this host.
+    expose:
+      - "5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./apps/api/db/migrations:/docker-entrypoint-initdb.d:ro
@@ -24,14 +26,27 @@ services:
       - .env
     environment:
       DATABASE_URL: postgres://foodfest:foodfest@postgres:5432/foodfest
-    ports:
-      - "3000:3000"
+    # No published port: the api is reachable only from other containers on
+    # this compose network (the web/nginx service proxies to it). Nothing
+    # outside this host can hit it directly.
+    expose:
+      - "3000"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - api-uploads:/app/uploads
       - ./backups:/app/backups
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api
     restart: unless-stopped
 
 volumes:

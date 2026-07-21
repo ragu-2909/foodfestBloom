@@ -22,12 +22,12 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 3000),
   appVersion: process.env.APP_VERSION ?? "0.1.0",
-  frontendOrigin: process.env.FRONTEND_ORIGIN ?? "https://foodfest-bloom-web-qfuh.vercel.app",
+  frontendOrigin: process.env.FRONTEND_ORIGIN ?? "http://localhost:5173",
   corsOrigins: process.env.CORS_ORIGINS,
   databaseUrl: required("DATABASE_URL", "postgres://foodfest:foodfest@localhost:5432/foodfest"),
   poolMax: Number(process.env.PG_POOL_MAX ?? 12),
   adminUsername: required("ADMIN_USERNAME", "admin"),
   adminPassword: required("ADMIN_PASSWORD", "change-this-password"),
   jwtSecret: required("JWT_SECRET", "change-this-long-random-secret"),
-  publicApiUrl: process.env.PUBLIC_API_URL ?? `https://foodfest-bloom-web-qfuh.vercel.app:${process.env.PORT ?? 3000}`
+  publicApiUrl: process.env.PUBLIC_API_URL ?? "/api"
 };

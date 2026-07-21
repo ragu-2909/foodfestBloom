@@ -1,5 +1,8 @@
 config:
-  target: "https://backend.ragu2909.pw"
+  # Point this at the server's own address, e.g. http://localhost or
+  # http://<server-lan-ip>. Load tests should run from/against the
+  # deployment host itself, not an external domain.
+  target: "http://localhost"
   phases:
     - duration: 60
       arrivalRate: 10
@@ -12,12 +15,12 @@ scenarios:
   - name: "Register and vote"
     flow:
       - get:
-          url: "/teams"
+          url: "/api/teams"
           capture:
             - json: "$[0].id"
               as: "teamId"
       - post:
-          url: "/register"
+          url: "/api/register"
           json:
             email: "load-{{ $randomNumber(1, 10000000) }}@company.com"
             employeeName: "Load Tester"
@@ -26,7 +29,7 @@ scenarios:
             foodCategory: "Snacks"
             contactNumber: "9999999999"
       - post:
-          url: "/vote"
+          url: "/api/vote"
           json:
             email: "voter-{{ $randomNumber(1, 10000000) }}@company.com"
             teamId: "{{ teamId }}"
