@@ -45,6 +45,28 @@ baked into the frontend at `docker compose build` time and makes every
 API call same-origin through the nginx proxy, so the browser never needs
 to know the server's IP or hostname ahead of time.
 
+## Loading Teams
+
+The database starts empty — there is no admin "create team" flow. Teams
+come from a one-time Excel import (`apps/api/scripts/seed-participants.ts`),
+and the source file `apps/api/db/seed-data/taste-of-bloom-season3.xlsx` is
+gitignored, so it does **not** come down with `git clone`.
+
+1. Copy the xlsx onto the server at `apps/api/db/seed-data/taste-of-bloom-season3.xlsx`
+   (e.g. `scp taste-of-bloom-season3.xlsx user@server:/path/to/foodfestBloom/apps/api/db/seed-data/`).
+2. Run the import (uses a separate one-off `seed` service defined in
+   `docker-compose.yml`, not started by `docker compose up`):
+
+```bash
+docker compose run --rm seed
+```
+
+This builds a throwaway container from the API's `build` stage (which has
+the full source and `tsx`, unlike the slim runtime image) and runs the
+import against the `postgres` service over the internal compose network —
+no ports need to be opened for this. Re-run it any time the sheet changes;
+the import upserts teams by name.
+
 ## Health Monitoring
 
 ```text

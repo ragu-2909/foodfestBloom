@@ -49,6 +49,27 @@ services:
       - api
     restart: unless-stopped
 
+  # One-off team-import job, not started by `docker compose up`. The seed
+  # source is gitignored (apps/api/db/seed-data/*.xlsx), so drop the file
+  # there on the host first, then run:
+  #   docker compose run --rm seed
+  seed:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://foodfest:foodfest@postgres:5432/foodfest
+    volumes:
+      - ./apps/api/db/seed-data:/app/apps/api/db/seed-data:ro
+    command: ["npm", "run", "seed:participants", "--workspace", "apps/api"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
 volumes:
   postgres-data:
   api-uploads:
