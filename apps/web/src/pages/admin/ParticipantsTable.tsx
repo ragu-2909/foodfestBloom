@@ -154,10 +154,27 @@ export function ParticipantsTable({
     }
   };
 
-  const copyLink = (invitationToken?: string) => {
+  const copyLink = async (invitationToken?: string) => {
     if (!invitationToken) return;
     const link = `${window.location.origin}/select-color/${invitationToken}`;
-    navigator.clipboard.writeText(link);
+
+    // navigator.clipboard is only exposed in secure contexts (HTTPS or
+    // localhost) — this app is served over plain HTTP on an internal IP,
+    // so fall back to the old execCommand copy trick there.
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(link);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = link;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+
     toast.success("Invitation link copied.");
   };
 
